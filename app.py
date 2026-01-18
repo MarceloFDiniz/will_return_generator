@@ -264,9 +264,10 @@ if gerar:
                 "JPG": "image/jpeg"
             }[format_out]
         )
-# Preview do resultado
-preview_slot.image(
-    tmp.name,
-    caption="Preview",
-    use_container_width=True
-)
+        
+    # Preview do resultado
+    preview_slot.image(
+        tmp.name,
+        caption="Preview",
+        use_container_width=True
+    )
