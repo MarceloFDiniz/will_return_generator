@@ -1,93 +1,95 @@
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 import tempfile
-import textwrap
 
 # =========================
-# Layout helpers
+# Layout global (frase inteira)
 # =========================
 
-def split_two_lines(draw, font, text, max_width):
-    words = text.split()
-    best = None
-
-    for i in range(1, len(words)):
-        l1 = " ".join(words[:i])
-        l2 = " ".join(words[i:])
-        w1 = draw.textbbox((0, 0), l1, font=font)[2]
-        w2 = draw.textbbox((0, 0), l2, font=font)[2]
-        if w1 <= max_width and w2 <= max_width:
-            best = (l1, l2)
-            break
-
-    return best
-
-
-def fit_font_and_layout(draw, text, font_path, max_width):
+def fit_font_and_wrap_global(draw, words, font_path, max_width):
     size = 96
+    phrase = " ".join(words)
+
+    idx_will = words.index("WILL")
+    idx_in = words.index("IN")
+
     while size >= 24:
         font = ImageFont.truetype(font_path, size)
-        bbox = draw.textbbox((0, 0), text, font=font)
-        if bbox[2] <= max_width:
-            return font, [text]
 
-        split = split_two_lines(draw, font, text, max_width)
-        if split:
-            return font, list(split)
+        # 1 linha
+        if draw.textbbox((0, 0), phrase, font=font)[2] <= max_width:
+            return font, [words]
+
+        # 2 linhas — quebra global, mas nunca dentro de WILL RETURN IN
+        for i in range(1, len(words)):
+            if idx_will <= i <= idx_in:
+                continue  # proibido quebrar aqui
+
+            l1 = " ".join(words[:i])
+            l2 = " ".join(words[i:])
+
+            if (
+                draw.textbbox((0, 0), l1, font=font)[2] <= max_width
+                and draw.textbbox((0, 0), l2, font=font)[2] <= max_width
+            ):
+                return font, [words[:i], words[i:]]
 
         size -= 2
 
     font = ImageFont.truetype(font_path, 24)
-    return font, textwrap.wrap(text, width=20)
-
-
-def measure_lines(draw, font, lines):
-    widths = []
-    heights = []
-    for l in lines:
-        bbox = draw.textbbox((0, 0), l, font=font)
-        widths.append(bbox[2] - bbox[0])
-        heights.append(bbox[3] - bbox[1])
-    return widths, heights
+    return font, [words]
 
 
 # =========================
-# Render
+# Classificação por bloco
 # =========================
 
-def render_frame(
-    show_a,
-    show_b,
-    show_c,
-    blocks,
-    layout,
-    font,
-    width,
-    height,
-    bg_color,
-    text_color,
-    footer_font
-):
-    img = Image.new("RGB", (width, height), bg_color)
-    draw = ImageDraw.Draw(img)
+def classify_words(words):
+    classes = []
+    state = "A"
 
-    for idx, visible in enumerate([show_a, show_b, show_c]):
-        if not visible:
+    for w in words:
+        if w == "WILL":
+            state = "B"
+        elif state == "B" and w == "IN":
+            classes.append("B")
+            state = "C"
             continue
 
-        lines = blocks[idx]
-        xs, ys = layout[idx]
+        classes.append(state)
 
-        for line, x, y in zip(lines, xs, ys):
-            draw.text((x, y), line, font=font, fill=text_color)
+    return classes
 
-    # Footer
-    footer_text = "Desenvolvido por Marcelo Diniz"
-    fb = draw.textbbox((0, 0), footer_text, font=footer_font)
-    fx = (width - (fb[2] - fb[0])) // 2
-    fy = height - (fb[3] - fb[1]) - 12
 
-    draw.text((fx, fy), footer_text, font=footer_font, fill=text_color)
+# =========================
+# Render frame
+# =========================
+
+def render_frame(lines, classes, visible, font, width, height, bg, color):
+    img = Image.new("RGB", (width, height), bg)
+    draw = ImageDraw.Draw(img)
+
+    line_heights = [
+        draw.textbbox((0, 0), " ".join(l), font=font)[3]
+        for l in lines
+    ]
+    total_h = sum(line_heights)
+    y = (height - total_h) // 2
+
+    idx = 0
+    for line, lh in zip(lines, line_heights):
+        line_text = " ".join(line)
+        lw = draw.textbbox((0, 0), line_text, font=font)[2]
+        x = (width - lw) // 2
+
+        for w in line:
+            if classes[idx] in visible:
+                draw.text((x, y), w + " ", font=font, fill=color)
+            w_width = draw.textbbox((0, 0), w + " ", font=font)[2]
+            x += w_width
+            idx += 1
+
+        y += lh
 
     return img
 
@@ -111,89 +113,49 @@ format_out = st.selectbox("Formato", ["GIF", "WebP"])
 bg_hex = st.color_picker("Cor de fundo", "#000000")
 text_hex = st.color_picker("Cor do texto", "#FFFFFF")
 
+st.markdown(
+    "<div style='text-align:center;opacity:0.6;font-size:0.9em'>"
+    "Desenvolvido por Marcelo Diniz"
+    "</div>",
+    unsafe_allow_html=True
+)
+
 if st.button("Gerar"):
     if "WILL RETURN IN" not in full_text:
         st.error("O texto deve conter exatamente 'WILL RETURN IN'")
         st.stop()
 
-    before, after = full_text.split("WILL RETURN IN", 1)
-    block_a = before.strip()
-    block_b = "WILL RETURN IN"
-    block_c = after.strip()
+    words = full_text.split()
 
     width, height = map(int, resolution.split("x"))
-    bg_color = tuple(int(bg_hex[i:i+2], 16) for i in (1, 3, 5))
-    text_color = tuple(int(text_hex[i:i+2], 16) for i in (1, 3, 5))
+    bg = tuple(int(bg_hex[i:i+2], 16) for i in (1, 3, 5))
+    color = tuple(int(text_hex[i:i+2], 16) for i in (1, 3, 5))
 
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    footer_font = ImageFont.truetype(font_path, 18)
 
     dummy = Image.new("RGB", (width, height))
     draw = ImageDraw.Draw(dummy)
 
-    # Ajuste global com layout final completo
-    full_concat = f"{block_a} {block_b} {block_c}".strip()
-    font, _ = fit_font_and_layout(draw, full_concat, font_path, int(width * 0.9))
+    font, lines = fit_font_and_wrap_global(
+        draw, words, font_path, int(width * 0.9)
+    )
 
-    blocks = []
-    layouts = []
+    classes = classify_words(words)
 
-    cursor_x = None
-    center_y = height // 2
-
-    # Pre-cálculo de blocos
-    for text in [block_a, block_b, block_c]:
-        lines = split_two_lines(draw, font, text, int(width * 0.9))
-        if lines:
-            lines = list(lines)
-        else:
-            lines = [text]
-
-        blocks.append(lines)
-
-    # Medição total
-    total_width = 0
-    block_metrics = []
-
-    for lines in blocks:
-        w, h = measure_lines(draw, font, lines)
-        block_width = max(w)
-        block_height = sum(h)
-        block_metrics.append((w, h, block_width, block_height))
-        total_width += block_width
-
-    start_x = (width - total_width) // 2
-    current_x = start_x
-
-    for (lines, (ws, hs, bw, bh)) in zip(blocks, block_metrics):
-        xs = []
-        ys = []
-
-        y_start = center_y - (bh // 2)
-        cy = y_start
-
-        for w, h, line in zip(ws, hs, lines):
-            xs.append(current_x + (bw - w) // 2)
-            ys.append(cy)
-            cy += h
-
-        layouts.append((xs, ys))
-        current_x += bw
-
-    hold_frames = max(1, int((delay_ms / 1000) * fps))
+    hold = max(1, int((delay_ms / 1000) * fps))
     frames = []
 
     frames += [
-        render_frame(True, False, False, blocks, layouts, font, width, height, bg_color, text_color, footer_font)
-    ] * hold_frames
+        render_frame(lines, classes, {"A"}, font, width, height, bg, color)
+    ] * hold
 
     frames += [
-        render_frame(True, True, False, blocks, layouts, font, width, height, bg_color, text_color, footer_font)
-    ] * hold_frames
+        render_frame(lines, classes, {"A", "B"}, font, width, height, bg, color)
+    ] * hold
 
     frames += [
-        render_frame(True, True, True, blocks, layouts, font, width, height, bg_color, text_color, footer_font)
-    ] * (hold_frames * 2)
+        render_frame(lines, classes, {"A", "B", "C"}, font, width, height, bg, color)
+    ] * (hold * 2)
 
     tmp = tempfile.NamedTemporaryFile(
         delete=False,
