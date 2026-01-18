@@ -1,201 +1,63 @@
-import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
-import tempfile
-import requests
-from io import BytesIO
-import emoji
-
-# =====================================================
-# Configuração da página
-# =====================================================
-
-st.set_page_config(
-    page_title="Will Return Generator",
-    layout="centered"
-)
+st.title("🎬 Will Return Generator")
 
 st.markdown(
     """
-    <style>
-    .block-container { padding-top: 2rem; }
-    .stButton > button {
-        width: 100%;
-        height: 3em;
-        font-weight: 600;
-    }
-    </style>
+    <p style="font-size:1.05em; opacity:0.85">
+    Gere animações no estilo <b>“Will Return”</b> da Marvel, com revelação progressiva do texto.
+    Exporte como <b>GIF/WebP animado</b> ou <b>PNG/JPG estático</b>.
+    </p>
     """,
     unsafe_allow_html=True
 )
 
-# =====================================================
-# Emoji helpers (Twemoji)
-# =====================================================
-
-EMOJI_CACHE = {}
-
-def is_emoji(char: str) -> bool:
-    return char in emoji.EMOJI_DATA
-
-
-def load_emoji_image(char: str, size: int):
-    key = (char, size)
-    if key in EMOJI_CACHE:
-        return EMOJI_CACHE[key]
-
-    codepoint = "-".join(f"{ord(c):x}" for c in char)
-    url = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/{codepoint}.png"
-
-    try:
-        r = requests.get(url, timeout=5)
-        if r.status_code != 200:
-            return None
-        img = Image.open(BytesIO(r.content)).convert("RGBA")
-        img = img.resize((size, size), Image.LANCZOS)
-        EMOJI_CACHE[key] = img
-        return img
-    except Exception:
-        return None
-
-
-# =====================================================
-# Texto / Layout helpers
-# =====================================================
-
-def fit_font_single_line(draw, text, font_path, max_width):
-    size = 96
-    while size >= 18:
-        font = ImageFont.truetype(font_path, size)
-        if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
-            return font
-        size -= 2
-    return ImageFont.truetype(font_path, 18)
-
-
-def classify_words(words):
-    classes = []
-    state = "A"
-
-    for w in words:
-        if w == "WILL":
-            state = "B"
-        elif state == "B" and w == "IN":
-            classes.append("B")
-            state = "C"
-            continue
-
-        classes.append(state)
-
-    return classes
-
-
-def render_frame(words, classes, visible, font, width, height, bg, color):
-    img = Image.new("RGB", (width, height), bg)
-    draw = ImageDraw.Draw(img)
-
-    full_text = " ".join(words)
-    bbox = draw.textbbox((0, 0), full_text, font=font)
-    x = (width - (bbox[2] - bbox[0])) // 2
-    y = (height - (bbox[3] - bbox[1])) // 2
-
-    cursor = x
-    emoji_size = font.size
-
-    for word, cls in zip(words, classes):
-        if cls not in visible:
-            cursor += draw.textbbox((0, 0), word + " ", font=font)[2]
-            continue
-
-        for ch in word:
-            if is_emoji(ch):
-                emoji_img = load_emoji_image(ch, emoji_size)
-                if emoji_img:
-                    img.paste(emoji_img, (cursor, y), emoji_img)
-                    cursor += emoji_size
-                else:
-                    cursor += emoji_size
-            else:
-                draw.text((cursor, y), ch, font=font, fill=color)
-                cursor += draw.textbbox((0, 0), ch, font=font)[2]
-
-        cursor += draw.textbbox((0, 0), " ", font=font)[2]
-
-    return img
-
-
-def render_static_image(words, font, width, height, bg, color):
-    """Imagem estática com frase completa"""
-    img = Image.new("RGB", (width, height), bg)
-    draw = ImageDraw.Draw(img)
-
-    full_text = " ".join(words)
-    bbox = draw.textbbox((0, 0), full_text, font=font)
-    x = (width - (bbox[2] - bbox[0])) // 2
-    y = (height - (bbox[3] - bbox[1])) // 2
-
-    cursor = x
-    emoji_size = font.size
-
-    for word in words:
-        for ch in word:
-            if is_emoji(ch):
-                emoji_img = load_emoji_image(ch, emoji_size)
-                if emoji_img:
-                    img.paste(emoji_img, (cursor, y), emoji_img)
-                    cursor += emoji_size
-                else:
-                    cursor += emoji_size
-            else:
-                draw.text((cursor, y), ch, font=font, fill=color)
-                cursor += draw.textbbox((0, 0), ch, font=font)[2]
-
-        cursor += draw.textbbox((0, 0), " ", font=font)[2]
-
-    return img
-
-
-# =====================================================
-# UI
-# =====================================================
-
-st.title("🎬 Will Return Generator")
+# =========================
+# Texto principal
+# =========================
 
 full_text = st.text_input(
     "Texto",
     "MARCELO WILL RETURN IN AVENGERS: DOOMSDAY"
 )
 
-fps = st.slider("FPS", 6, 15, 10)
-delay_ms = st.slider("Delay entre blocos (ms)", 100, 1000, 1000)
-resolution = st.selectbox("Resolução", ["640x360", "1280x720"])
-format_out = st.selectbox("Formato de saída", ["GIF", "WebP", "PNG", "JPG"])
+format_out = st.selectbox(
+    "Formato de saída",
+    ["GIF", "WebP", "PNG", "JPG"]
+)
 
-# Controles alinhados
-col1, col2, col3, col4 = st.columns(4)
+# =========================
+# Opções avançadas
+# =========================
 
-with col1:
-    bg_hex = st.color_picker("Fundo", "#000000")
+with st.expander("⚙️ Opções Avançadas", expanded=False):
+    fps = st.slider("FPS", 6, 15, 10)
+    delay_ms = st.slider("Delay entre blocos (ms)", 100, 1000, 1000)
+    resolution = st.selectbox("Resolução", ["640x360", "1280x720"])
 
-with col2:
-    text_hex = st.color_picker("Texto", "#FFFFFF")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        bg_hex = st.color_picker("Cor de fundo", "#000000")
+    with col_b:
+        text_hex = st.color_picker("Cor do texto", "#FFFFFF")
 
-with col3:
-    gerar = st.button("Gerar")
+# =========================
+# Ação principal
+# =========================
 
-with col4:
-    download_slot = st.empty()
-    preview_slot = st.empty()
+gerar = st.button("🎞️ Gerar", use_container_width=True)
+
+preview_slot = st.empty()
+download_slot = st.empty()
 
 st.markdown(
-    "<div style='text-align:center;opacity:0.6;font-size:0.9em'>"
+    "<div style='text-align:center;opacity:0.6;font-size:0.9em;margin-top:2rem'>"
     "Desenvolvido por Marcelo Diniz"
     "</div>",
     unsafe_allow_html=True
 )
 
-# =====================================================
+# =========================
 # Geração
-# =====================================================
+# =========================
 
 if gerar:
     if "WILL RETURN IN" not in full_text:
@@ -225,7 +87,6 @@ if gerar:
         img = render_static_image(words, font, width, height, bg, color)
         img.save(tmp.name, format="JPEG" if format_out == "JPG" else format_out)
 
-
     # ---------- Animado ----------
     else:
         hold = max(1, int((delay_ms / 1000) * fps))
@@ -252,9 +113,19 @@ if gerar:
             format="WEBP" if format_out == "WebP" else "GIF"
         )
 
+    # =========================
+    # Preview (entre Gerar e Download)
+    # =========================
+
+    preview_slot.image(
+        tmp.name,
+        caption="Preview",
+        use_container_width=True
+    )
+
     with open(tmp.name, "rb") as f:
         download_slot.download_button(
-            "Download",
+            "⬇️ Download",
             f,
             file_name=f"will_return.{format_out.lower()}",
             mime={
@@ -262,12 +133,6 @@ if gerar:
                 "WebP": "image/webp",
                 "PNG": "image/png",
                 "JPG": "image/jpeg"
-            }[format_out]
+            }[format_out],
+            use_container_width=True
         )
-        
-    # Preview do resultado
-    preview_slot.image(
-        tmp.name,
-        caption="Preview",
-        use_container_width=True
-    )
