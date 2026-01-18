@@ -156,9 +156,17 @@ def render_text(words, classes, visible, font, tracking_factor, width, height, b
     draw = ImageDraw.Draw(img)
 
     full_text = " ".join(words)
-    bbox = draw.textbbox((0, 0), full_text, font=font)
-    x = (width - (bbox[2] - bbox[0])) // 2
-    y = (height - (bbox[3] - bbox[1])) // 2
+
+    # --- MEDIÇÃO CORRETA COM TRACKING ---
+    text_width = measure_text_width_with_tracking(
+        draw, full_text, font, tracking_factor
+    )
+
+    text_height = draw.textbbox((0, 0), full_text, font=font)[3]
+
+    # --- CENTRALIZAÇÃO REAL ---
+    x = (width - text_width) // 2
+    y = (height - text_height) // 2
 
     cursor = x
     emoji_size = font.size
@@ -166,7 +174,15 @@ def render_text(words, classes, visible, font, tracking_factor, width, height, b
 
     for word, cls in zip(words, classes):
         if cls not in visible:
-            cursor += draw.textbbox((0, 0), word + " ", font=font)[2]
+            # Avança cursor corretamente mesmo sem desenhar
+            for ch in word:
+                if ch == " ":
+                    cursor += draw.textbbox((0, 0), " ", font=font)[2]
+                else:
+                    char_w = draw.textbbox((0, 0), ch, font=font)[2]
+                    cursor += char_w + tracking_px
+
+            cursor += draw.textbbox((0, 0), " ", font=font)[2]
             continue
 
         for ch in word:
@@ -182,9 +198,11 @@ def render_text(words, classes, visible, font, tracking_factor, width, height, b
                 char_w = draw.textbbox((0, 0), ch, font=font)[2]
                 cursor += char_w + tracking_px
 
+        # Espaço entre palavras (sem tracking extra)
         cursor += draw.textbbox((0, 0), " ", font=font)[2]
 
     return img
+
 
 
 def render_static_image(words, font, tracking_factor, width, height, bg, color):
