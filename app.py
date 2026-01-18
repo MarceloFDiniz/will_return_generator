@@ -73,6 +73,15 @@ PRESETS = {
         "bg": "#000000",
         "text": "#FFFFFF",
     },
+    "Zack Snyder Mode": {
+        "fps": 6,
+        "fade_ms": 2500,
+        "delay_ms": 6000,
+        "resolution": "1280x720",
+        "font": "Oswald Regular 400 (default)",
+        "bg": "#000000",
+        "text": "#FFFFFF",
+    },
     "Alta Qualidade": {
         "fps": 15,
         "fade_ms": 1300,
