@@ -102,15 +102,32 @@ def load_emoji_image(char: str, size: int):
 # Texto / Layout helpers
 # =====================================================
 
-def fit_font_single_line(draw, text, font_path, max_width):
+def measure_text_width_with_tracking(draw, text, font, tracking_factor):
+    width = 0
+    tracking_px = int(font.size * tracking_factor)
+
+    for ch in text:
+        if ch == " ":
+            width += draw.textbbox((0, 0), " ", font=font)[2]
+        else:
+            char_w = draw.textbbox((0, 0), ch, font=font)[2]
+            width += char_w + tracking_px
+
+    return width
+
+
+def fit_font_single_line(draw, text, font_path, max_width, tracking_factor):
     size = 96
     while size >= 18:
         font = ImageFont.truetype(font_path, size)
-        if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
+        measured_width = measure_text_width_with_tracking(
+            draw, text, font, tracking_factor
+        )
+        if measured_width <= max_width:
             return font
         size -= 2
-    return ImageFont.truetype(font_path, 18)
 
+    return ImageFont.truetype(font_path, 18)
 
 def classify_words(words):
     """
@@ -252,8 +269,13 @@ if gerar:
     dummy = Image.new("RGB", (width, height))
     draw = ImageDraw.Draw(dummy)
 
-    font = fit_font_single_line(draw, full_text, font_path, int(width * 0.9))
-
+    font = fit_font_single_line(
+    draw,
+    full_text,
+    font_path,
+    int(width * 0.9),
+    tracking_factor
+)
     tmp = tempfile.NamedTemporaryFile(
         delete=False,
         suffix=f".{format_out.lower()}"
