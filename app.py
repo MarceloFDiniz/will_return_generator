@@ -1,3 +1,10 @@
+import streamlit as st
+from PIL import Image, ImageDraw, ImageFont
+import tempfile
+import requests
+from io import BytesIO
+import emoji
+
 st.title("🎬 Will Return Generator")
 
 st.markdown(
