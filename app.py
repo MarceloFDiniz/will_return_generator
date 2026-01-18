@@ -29,6 +29,47 @@ st.markdown(
 )
 
 # =====================================================
+# Fontes disponíveis (whitelist)
+# =====================================================
+
+FONT_OPTIONS = {
+    "Oswald Regular 400 (default)": {
+        "path": "fonts/Oswald-Regular.ttf",
+        "tracking": 0.15
+    },
+
+    "Roboto Condensed Thin 100": {
+        "path": "fonts/RobotoCondensed-Thin.ttf",
+        "tracking": 0.10
+    },
+    "Roboto Condensed Light 300": {
+        "path": "fonts/RobotoCondensed-Light.ttf",
+        "tracking": 0.12
+    },
+    "Roboto Condensed Regular Italic 400": {
+        "path": "fonts/RobotoCondensed-Italic.ttf",
+        "tracking": 0.12
+    },
+    "Roboto Condensed Black 900": {
+        "path": "fonts/RobotoCondensed-Black.ttf",
+        "tracking": 0.08
+    },
+
+    "Inter Tight Regular 400": {
+        "path": "fonts/InterTight-Regular.ttf",
+        "tracking": 0.05
+    },
+    "Inter Tight Medium 500": {
+        "path": "fonts/InterTight-Medium.ttf",
+        "tracking": 0.05
+    },
+    "Inter Tight Bold 700": {
+        "path": "fonts/InterTight-Bold.ttf",
+        "tracking": 0.04
+    },
+}
+
+# =====================================================
 # Emoji helpers (Twemoji)
 # =====================================================
 
@@ -56,7 +97,6 @@ def load_emoji_image(char: str, size: int):
         return img
     except Exception:
         return None
-
 
 # =====================================================
 # Texto / Layout helpers
@@ -94,7 +134,7 @@ def classify_words(words):
     return classes
 
 
-def render_frame(words, classes, visible, font, width, height, bg, color):
+def render_text(words, classes, visible, font, tracking_factor, width, height, bg, color):
     img = Image.new("RGB", (width, height), bg)
     draw = ImageDraw.Draw(img)
 
@@ -105,6 +145,7 @@ def render_frame(words, classes, visible, font, width, height, bg, color):
 
     cursor = x
     emoji_size = font.size
+    tracking_px = int(font.size * tracking_factor)
 
     for word, cls in zip(words, classes):
         if cls not in visible:
@@ -116,47 +157,22 @@ def render_frame(words, classes, visible, font, width, height, bg, color):
                 emoji_img = load_emoji_image(ch, emoji_size)
                 if emoji_img:
                     img.paste(emoji_img, (cursor, y), emoji_img)
-                    cursor += emoji_size
+                    cursor += emoji_size + tracking_px
                 else:
-                    cursor += emoji_size
+                    cursor += emoji_size + tracking_px
             else:
                 draw.text((cursor, y), ch, font=font, fill=color)
-                cursor += draw.textbbox((0, 0), ch, font=font)[2]
+                char_w = draw.textbbox((0, 0), ch, font=font)[2]
+                cursor += char_w + tracking_px
 
         cursor += draw.textbbox((0, 0), " ", font=font)[2]
 
     return img
 
 
-def render_static_image(words, font, width, height, bg, color):
-    img = Image.new("RGB", (width, height), bg)
-    draw = ImageDraw.Draw(img)
-
-    full_text = " ".join(words)
-    bbox = draw.textbbox((0, 0), full_text, font=font)
-    x = (width - (bbox[2] - bbox[0])) // 2
-    y = (height - (bbox[3] - bbox[1])) // 2
-
-    cursor = x
-    emoji_size = font.size
-
-    for word in words:
-        for ch in word:
-            if is_emoji(ch):
-                emoji_img = load_emoji_image(ch, emoji_size)
-                if emoji_img:
-                    img.paste(emoji_img, (cursor, y), emoji_img)
-                    cursor += emoji_size
-                else:
-                    cursor += emoji_size
-            else:
-                draw.text((cursor, y), ch, font=font, fill=color)
-                cursor += draw.textbbox((0, 0), ch, font=font)[2]
-
-        cursor += draw.textbbox((0, 0), " ", font=font)[2]
-
-    return img
-
+def render_static_image(words, font, tracking_factor, width, height, bg, color):
+    classes = ["A"] * len(words)
+    return render_text(words, classes, {"A"}, font, tracking_factor, width, height, bg, color)
 
 # =====================================================
 # UI
@@ -178,6 +194,16 @@ full_text = st.text_input(
     "Texto",
     "MARCELO WILL RETURN IN AVENGERS: DOOMSDAY"
 )
+
+font_name = st.selectbox(
+    "Fonte",
+    list(FONT_OPTIONS.keys()),
+    index=0
+)
+
+font_config = FONT_OPTIONS[font_name]
+font_path = font_config["path"]
+tracking_factor = font_config["tracking"]
 
 format_out = st.selectbox(
     "Formato de saída",
@@ -223,7 +249,6 @@ if gerar:
     bg = tuple(int(bg_hex[i:i+2], 16) for i in (1, 3, 5))
     color = tuple(int(text_hex[i:i+2], 16) for i in (1, 3, 5))
 
-    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     dummy = Image.new("RGB", (width, height))
     draw = ImageDraw.Draw(dummy)
 
@@ -235,22 +260,24 @@ if gerar:
     )
 
     if format_out in ["PNG", "JPG"]:
-        img = render_static_image(words, font, width, height, bg, color)
+        img = render_static_image(
+            words, font, tracking_factor, width, height, bg, color
+        )
         img.save(tmp.name, format="JPEG" if format_out == "JPG" else format_out)
     else:
         hold = max(1, int((delay_ms / 1000) * fps))
         frames = []
 
         frames += [
-            render_frame(words, classes, {"A"}, font, width, height, bg, color)
+            render_text(words, classes, {"A"}, font, tracking_factor, width, height, bg, color)
         ] * hold
 
         frames += [
-            render_frame(words, classes, {"A", "B"}, font, width, height, bg, color)
+            render_text(words, classes, {"A", "B"}, font, tracking_factor, width, height, bg, color)
         ] * hold
 
         frames += [
-            render_frame(words, classes, {"A", "B", "C"}, font, width, height, bg, color)
+            render_text(words, classes, {"A", "B", "C"}, font, tracking_factor, width, height, bg, color)
         ] * (hold * 2)
 
         frames[0].save(
