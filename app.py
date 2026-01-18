@@ -222,7 +222,8 @@ if gerar:
     # ---------- Estático ----------
     if format_out in ["PNG", "JPG"]:
         img = render_static_image(words, font, width, height, bg, color)
-        img.save(tmp.name, format=format_out)
+        img.save(tmp.name, format="JPEG" if format_out == "JPG" else format_out)
+
 
     # ---------- Animado ----------
     else:
