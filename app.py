@@ -73,11 +73,6 @@ def fit_font_single_line(draw, text, font_path, max_width):
 
 
 def classify_words(words):
-    """
-    A = antes de WILL RETURN IN
-    B = WILL RETURN IN
-    C = depois
-    """
     classes = []
     state = "A"
 
@@ -128,6 +123,37 @@ def render_frame(words, classes, visible, font, width, height, bg, color):
     return img
 
 
+def render_static_image(words, font, width, height, bg, color):
+    """Imagem estática com frase completa"""
+    img = Image.new("RGB", (width, height), bg)
+    draw = ImageDraw.Draw(img)
+
+    full_text = " ".join(words)
+    bbox = draw.textbbox((0, 0), full_text, font=font)
+    x = (width - (bbox[2] - bbox[0])) // 2
+    y = (height - (bbox[3] - bbox[1])) // 2
+
+    cursor = x
+    emoji_size = font.size
+
+    for word in words:
+        for ch in word:
+            if is_emoji(ch):
+                emoji_img = load_emoji_image(ch, emoji_size)
+                if emoji_img:
+                    img.paste(emoji_img, (cursor, y), emoji_img)
+                    cursor += emoji_size
+                else:
+                    cursor += emoji_size
+            else:
+                draw.text((cursor, y), ch, font=font, fill=color)
+                cursor += draw.textbbox((0, 0), ch, font=font)[2]
+
+        cursor += draw.textbbox((0, 0), " ", font=font)[2]
+
+    return img
+
+
 # =====================================================
 # UI
 # =====================================================
@@ -142,9 +168,9 @@ full_text = st.text_input(
 fps = st.slider("FPS", 6, 15, 10)
 delay_ms = st.slider("Delay entre blocos (ms)", 100, 1000, 1000)
 resolution = st.selectbox("Resolução", ["640x360", "1280x720"])
-format_out = st.selectbox("Formato", ["GIF", "WebP"])
+format_out = st.selectbox("Formato de saída", ["GIF", "WebP", "PNG", "JPG"])
 
-# Controles visuais alinhados
+# Controles alinhados
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
@@ -188,39 +214,51 @@ if gerar:
 
     font = fit_font_single_line(draw, full_text, font_path, int(width * 0.9))
 
-    hold = max(1, int((delay_ms / 1000) * fps))
-    frames = []
-
-    frames += [
-        render_frame(words, classes, {"A"}, font, width, height, bg, color)
-    ] * hold
-
-    frames += [
-        render_frame(words, classes, {"A", "B"}, font, width, height, bg, color)
-    ] * hold
-
-    frames += [
-        render_frame(words, classes, {"A", "B", "C"}, font, width, height, bg, color)
-    ] * (hold * 2)
-
     tmp = tempfile.NamedTemporaryFile(
         delete=False,
-        suffix=".gif" if format_out == "GIF" else ".webp"
+        suffix=f".{format_out.lower()}"
     )
 
-    frames[0].save(
-        tmp.name,
-        save_all=True,
-        append_images=frames[1:],
-        duration=int(1000 / fps),
-        loop=0,
-        format="WEBP" if format_out == "WebP" else "GIF"
-    )
+    # ---------- Estático ----------
+    if format_out in ["PNG", "JPG"]:
+        img = render_static_image(words, font, width, height, bg, color)
+        img.save(tmp.name, format=format_out)
+
+    # ---------- Animado ----------
+    else:
+        hold = max(1, int((delay_ms / 1000) * fps))
+        frames = []
+
+        frames += [
+            render_frame(words, classes, {"A"}, font, width, height, bg, color)
+        ] * hold
+
+        frames += [
+            render_frame(words, classes, {"A", "B"}, font, width, height, bg, color)
+        ] * hold
+
+        frames += [
+            render_frame(words, classes, {"A", "B", "C"}, font, width, height, bg, color)
+        ] * (hold * 2)
+
+        frames[0].save(
+            tmp.name,
+            save_all=True,
+            append_images=frames[1:],
+            duration=int(1000 / fps),
+            loop=0,
+            format="WEBP" if format_out == "WebP" else "GIF"
+        )
 
     with open(tmp.name, "rb") as f:
         download_slot.download_button(
             "Download",
             f,
             file_name=f"will_return.{format_out.lower()}",
-            mime="image/gif" if format_out == "GIF" else "image/webp"
+            mime={
+                "GIF": "image/gif",
+                "WebP": "image/webp",
+                "PNG": "image/png",
+                "JPG": "image/jpeg"
+            }[format_out]
         )
