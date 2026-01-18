@@ -1,73 +1,138 @@
 import streamlit as st
-from moviepy.editor import (
-    TextClip,
-    concatenate_videoclips,
-    AudioFileClip,
-    CompositeVideoClip,
-)
+from PIL import Image, ImageDraw, ImageFont
+import imageio
+import numpy as np
 import tempfile
-import os
+import math
 
-# --- UI ---
-st.title("Countdown Video Generator")
+# =========================
+# Funções de animação
+# =========================
 
-text = st.text_input("Texto da contagem regressiva:", "BACK IN")
-duration = st.slider("Duração total (segundos):", 3, 30, 10)
-font_size = st.slider("Tamanho da fonte:", 40, 200, 120)
-color = st.color_picker("Cor do texto:", "#FFFFFF")
-bg_color = st.color_picker("Cor de fundo:", "#000000")
-music_file = st.file_uploader("Música de fundo (opcional):", type=["mp3", "wav"])
-output_type = st.selectbox("Tipo de saída:", ["MP4", "GIF"])
+def ease_in_out(t):
+    """Easing suave (0..1)"""
+    return 0.5 * (1 - math.cos(math.pi * t))
 
-if st.button("Gerar"):
-    st.info("Processando... aguarde.")
+def render_frame(
+    text,
+    width,
+    height,
+    font,
+    scale,
+    opacity,
+    bg_color,
+    text_color
+):
+    img = Image.new("RGBA", (width, height), bg_color)
+    draw = ImageDraw.Draw(img)
 
-    # --- Gerar clipe texto (MoviePy) ---
-    clips = []
-    for i in range(duration, 0, -1):
-        txt = f"{text} {i}"
-        clip = (
-            TextClip(txt,
-                     fontsize=font_size,
-                     color=color,
-                     size=(1280, 720),
-                     bg_color=bg_color)
-            .set_duration(1)
+    # Texto
+    text_bbox = draw.textbbox((0, 0), text, font=font)
+    tw = text_bbox[2] - text_bbox[0]
+    th = text_bbox[3] - text_bbox[1]
+
+    # Escala
+    scaled_font_size = int(font.size * scale)
+    scaled_font = ImageFont.truetype(font.path, scaled_font_size)
+
+    text_bbox = draw.textbbox((0, 0), text, font=scaled_font)
+    tw = text_bbox[2] - text_bbox[0]
+    th = text_bbox[3] - text_bbox[1]
+
+    x = (width - tw) // 2
+    y = (height - th) // 2
+
+    # Texto em camada separada para opacidade
+    text_layer = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    text_draw = ImageDraw.Draw(text_layer)
+
+    r, g, b = text_color
+    text_draw.text(
+        (x, y),
+        text,
+        font=scaled_font,
+        fill=(r, g, b, int(255 * opacity))
+    )
+
+    img = Image.alpha_composite(img, text_layer)
+    return img.convert("RGB")
+
+# =========================
+# UI Streamlit
+# =========================
+
+st.title("Will Return Generator (GIF / WebP)")
+
+text = st.text_input("Texto base:", "WILL RETURN IN")
+duration = st.slider("Duração total (segundos)", 3, 15, 6)
+fps = st.slider("FPS", 6, 15, 10)
+
+resolution = st.selectbox("Resolução", ["640x360", "1280x720"])
+format_out = st.selectbox("Formato", ["GIF", "WebP"])
+
+bg_hex = st.color_picker("Cor de fundo", "#000000")
+text_hex = st.color_picker("Cor do texto", "#FFFFFF")
+
+if st.button("Gerar animação"):
+    st.info("Renderizando frames...")
+
+    width, height = map(int, resolution.split("x"))
+    total_frames = duration * fps
+
+    bg_color = tuple(int(bg_hex[i:i+2], 16) for i in (1, 3, 5)) + (255,)
+    text_color = tuple(int(text_hex[i:i+2], 16) for i in (1, 3, 5))
+
+    # Fonte padrão (compatível com Cloud)
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    base_font = ImageFont.truetype(font_path, 80)
+    base_font.path = font_path  # hack para reutilizar
+
+    frames = []
+
+    for frame in range(total_frames):
+        t = frame / total_frames
+        e = ease_in_out(t)
+
+        # Fade + zoom
+        opacity = min(1.0, max(0.0, e * 1.2))
+        scale = 0.8 + 0.4 * e
+
+        seconds_left = max(1, duration - frame // fps)
+        full_text = f"{text} {seconds_left}"
+
+        img = render_frame(
+            full_text,
+            width,
+            height,
+            base_font,
+            scale,
+            opacity,
+            bg_color,
+            text_color
         )
-        clips.append(clip)
 
-    final_clip = concatenate_videoclips(clips, method="compose")
+        frames.append(np.array(img))
 
-    # --- Música opcional ---
-    if music_file:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp:
-            tmp.write(music_file.getbuffer())
-            tmp_path = tmp.name
+    tmp = tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=".gif" if format_out == "GIF" else ".webp"
+    )
 
-        audio = AudioFileClip(tmp_path).set_duration(final_clip.duration)
-        final_clip = final_clip.set_audio(audio)
-
-    # --- Exportar ---
-    tmp_out = tempfile.NamedTemporaryFile(delete=False, suffix=f".{output_type.lower()}")
-    out_path = tmp_out.name
-    tmp_out.close()
-
-    if output_type == "MP4":
-        final_clip.write_videofile(out_path, fps=24, codec="libx264")
+    if format_out == "GIF":
+        imageio.mimsave(tmp.name, frames, fps=fps)
+        mime = "image/gif"
+        fname = "will_return.gif"
     else:
-        final_clip.write_gif(out_path, fps=10)
+        imageio.mimsave(tmp.name, frames, format="WEBP", fps=fps)
+        mime = "image/webp"
+        fname = "will_return.webp"
 
-    st.success("Concluído.")
-    with open(out_path, "rb") as f:
+    st.success("Concluído")
+
+    with open(tmp.name, "rb") as f:
         st.download_button(
-            label=f"Download {output_type}",
+            "Download",
             data=f,
-            file_name=f"countdown.{output_type.lower()}",
-            mime="video/mp4" if output_type == "MP4" else "image/gif"
+            file_name=fname,
+            mime=mime
         )
-
-    # Cleanup
-    final_clip.close()
-    if music_file:
-        os.unlink(tmp_path)
-    os.unlink(out_path)
