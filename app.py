@@ -3,46 +3,18 @@ from PIL import Image, ImageDraw, ImageFont
 import tempfile
 
 # =========================
-# Layout global (frase inteira)
+# Helpers
 # =========================
 
-def fit_font_and_wrap_global(draw, words, font_path, max_width):
+def fit_font_single_line(draw, text, font_path, max_width):
     size = 96
-    phrase = " ".join(words)
-
-    idx_will = words.index("WILL")
-    idx_in = words.index("IN")
-
-    while size >= 24:
+    while size >= 18:
         font = ImageFont.truetype(font_path, size)
-
-        # 1 linha
-        if draw.textbbox((0, 0), phrase, font=font)[2] <= max_width:
-            return font, [words]
-
-        # 2 linhas — quebra global, mas nunca dentro de WILL RETURN IN
-        for i in range(1, len(words)):
-            if idx_will <= i <= idx_in:
-                continue  # proibido quebrar aqui
-
-            l1 = " ".join(words[:i])
-            l2 = " ".join(words[i:])
-
-            if (
-                draw.textbbox((0, 0), l1, font=font)[2] <= max_width
-                and draw.textbbox((0, 0), l2, font=font)[2] <= max_width
-            ):
-                return font, [words[:i], words[i:]]
-
+        if draw.textbbox((0, 0), text, font=font)[2] <= max_width:
+            return font
         size -= 2
+    return ImageFont.truetype(font_path, 18)
 
-    font = ImageFont.truetype(font_path, 24)
-    return font, [words]
-
-
-# =========================
-# Classificação por bloco
-# =========================
 
 def classify_words(words):
     classes = []
@@ -61,57 +33,74 @@ def classify_words(words):
     return classes
 
 
-# =========================
-# Render frame
-# =========================
-
-def render_frame(lines, classes, visible, font, width, height, bg, color):
+def render_frame(words, classes, visible, font, width, height, bg, color):
     img = Image.new("RGB", (width, height), bg)
     draw = ImageDraw.Draw(img)
 
-    line_heights = [
-        draw.textbbox((0, 0), " ".join(l), font=font)[3]
-        for l in lines
-    ]
-    total_h = sum(line_heights)
-    y = (height - total_h) // 2
+    full_text = " ".join(words)
+    bbox = draw.textbbox((0, 0), full_text, font=font)
+    x = (width - (bbox[2] - bbox[0])) // 2
+    y = (height - (bbox[3] - bbox[1])) // 2
 
-    idx = 0
-    for line, lh in zip(lines, line_heights):
-        line_text = " ".join(line)
-        lw = draw.textbbox((0, 0), line_text, font=font)[2]
-        x = (width - lw) // 2
-
-        for w in line:
-            if classes[idx] in visible:
-                draw.text((x, y), w + " ", font=font, fill=color)
-            w_width = draw.textbbox((0, 0), w + " ", font=font)[2]
-            x += w_width
-            idx += 1
-
-        y += lh
+    cursor = x
+    for w, cls in zip(words, classes):
+        word_text = w + " "
+        if cls in visible:
+            draw.text((cursor, y), word_text, font=font, fill=color)
+        cursor += draw.textbbox((0, 0), word_text, font=font)[2]
 
     return img
 
 
 # =========================
-# UI
+# UI config
 # =========================
 
-st.title("Will Return Generator")
+st.set_page_config(
+    page_title="Will Return Generator",
+    layout="centered"
+)
+
+st.markdown(
+    """
+    <style>
+    .block-container { padding-top: 2rem; }
+    .stButton > button {
+        width: 100%;
+        height: 3em;
+        font-weight: 600;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+st.title("🎬 Will Return Generator")
 
 full_text = st.text_input(
-    "Texto completo:",
+    "Texto",
     "MARCELO WILL RETURN IN AVENGERS: DOOMSDAY"
 )
 
 fps = st.slider("FPS", 6, 15, 10)
-delay_ms = st.slider("Delay entre blocos (ms)", 100, 600, 250)
+delay_ms = st.slider("Delay entre blocos (ms)", 100, 1000, 1000)
 resolution = st.selectbox("Resolução", ["640x360", "1280x720"])
 format_out = st.selectbox("Formato", ["GIF", "WebP"])
 
-bg_hex = st.color_picker("Cor de fundo", "#000000")
-text_hex = st.color_picker("Cor do texto", "#FFFFFF")
+# --- Linha de controles visuais
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    bg_hex = st.color_picker("Fundo", "#000000")
+
+with col2:
+    text_hex = st.color_picker("Texto", "#FFFFFF")
+
+with col3:
+    gerar = st.button("Gerar")
+
+with col4:
+    download_placeholder = st.empty()
 
 st.markdown(
     "<div style='text-align:center;opacity:0.6;font-size:0.9em'>"
@@ -120,41 +109,41 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-if st.button("Gerar"):
+# =========================
+# Geração
+# =========================
+
+if gerar:
     if "WILL RETURN IN" not in full_text:
         st.error("O texto deve conter exatamente 'WILL RETURN IN'")
         st.stop()
 
     words = full_text.split()
+    classes = classify_words(words)
 
     width, height = map(int, resolution.split("x"))
     bg = tuple(int(bg_hex[i:i+2], 16) for i in (1, 3, 5))
     color = tuple(int(text_hex[i:i+2], 16) for i in (1, 3, 5))
 
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-
     dummy = Image.new("RGB", (width, height))
     draw = ImageDraw.Draw(dummy)
 
-    font, lines = fit_font_and_wrap_global(
-        draw, words, font_path, int(width * 0.9)
-    )
-
-    classes = classify_words(words)
+    font = fit_font_single_line(draw, full_text, font_path, int(width * 0.9))
 
     hold = max(1, int((delay_ms / 1000) * fps))
     frames = []
 
     frames += [
-        render_frame(lines, classes, {"A"}, font, width, height, bg, color)
+        render_frame(words, classes, {"A"}, font, width, height, bg, color)
     ] * hold
 
     frames += [
-        render_frame(lines, classes, {"A", "B"}, font, width, height, bg, color)
+        render_frame(words, classes, {"A", "B"}, font, width, height, bg, color)
     ] * hold
 
     frames += [
-        render_frame(lines, classes, {"A", "B", "C"}, font, width, height, bg, color)
+        render_frame(words, classes, {"A", "B", "C"}, font, width, height, bg, color)
     ] * (hold * 2)
 
     tmp = tempfile.NamedTemporaryFile(
@@ -172,7 +161,7 @@ if st.button("Gerar"):
     )
 
     with open(tmp.name, "rb") as f:
-        st.download_button(
+        download_placeholder.download_button(
             "Download",
             f,
             file_name=f"will_return.{format_out.lower()}",
