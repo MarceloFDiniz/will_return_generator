@@ -184,6 +184,7 @@ with col3:
 
 with col4:
     download_slot = st.empty()
+    preview_slot = st.empty()
 
 st.markdown(
     "<div style='text-align:center;opacity:0.6;font-size:0.9em'>"
@@ -263,3 +264,9 @@ if gerar:
                 "JPG": "image/jpeg"
             }[format_out]
         )
+# Preview do resultado
+preview_slot.image(
+    tmp.name,
+    caption="Preview",
+    use_container_width=True
+)
