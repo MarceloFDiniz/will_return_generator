@@ -4,9 +4,10 @@ import tempfile
 import requests
 from io import BytesIO
 import emoji
+import math
 
 # =====================================================
-# Configuração da página
+# Página
 # =====================================================
 
 st.set_page_config(page_title="Will Return Generator", layout="centered")
@@ -26,11 +27,22 @@ st.markdown(
 )
 
 # =====================================================
-# Fontes disponíveis
+# Estado inicial (preset padrão aplicado)
+# =====================================================
+
+if "fps" not in st.session_state:
+    st.session_state.fps = 12
+if "fade_ms" not in st.session_state:
+    st.session_state.fade_ms = 1100
+if "delay_ms" not in st.session_state:
+    st.session_state.delay_ms = 2800
+
+# =====================================================
+# Fontes
 # =====================================================
 
 FONT_OPTIONS = {
-    "Oswald Regular 400 (default)": {"path": "fonts/Oswald-Regular.ttf", "tracking": 0.15},
+    "Oswald Regular 400 (default)": {"path": "fonts/Oswald-Regular.ttf", "tracking": 0.22},
     "Roboto Condensed Thin 100": {"path": "fonts/RobotoCondensed-Thin.ttf", "tracking": 0.10},
     "Roboto Condensed Light 300": {"path": "fonts/RobotoCondensed-Light.ttf", "tracking": 0.12},
     "Roboto Condensed Regular Italic 400": {"path": "fonts/RobotoCondensed-Italic.ttf", "tracking": 0.12},
@@ -41,21 +53,43 @@ FONT_OPTIONS = {
 }
 
 # =====================================================
-# Emoji helpers (Twemoji)
+# Presets
+# =====================================================
+
+PRESETS = {
+    "Marvel Original (Closest Match)": {
+        "fps": 12,
+        "fade_ms": 1100,
+        "delay_ms": 2800
+    },
+    "Leve (WhatsApp)": {
+        "fps": 8,
+        "fade_ms": 700,
+        "delay_ms": 1500
+    },
+    "Alta qualidade": {
+        "fps": 15,
+        "fade_ms": 1300,
+        "delay_ms": 3200
+    },
+}
+
+# =====================================================
+# Emojis (Twemoji)
 # =====================================================
 
 EMOJI_CACHE = {}
 
-def is_emoji(char: str) -> bool:
-    return char in emoji.EMOJI_DATA
+def is_emoji(ch):
+    return ch in emoji.EMOJI_DATA
 
 
-def load_emoji_image(char: str, size: int):
-    key = (char, size)
+def load_emoji_image(ch, size):
+    key = (ch, size)
     if key in EMOJI_CACHE:
         return EMOJI_CACHE[key]
 
-    codepoint = "-".join(f"{ord(c):x}" for c in char)
+    codepoint = "-".join(f"{ord(c):x}" for c in ch)
     url = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/{codepoint}.png"
 
     r = requests.get(url, timeout=5)
@@ -68,32 +102,32 @@ def load_emoji_image(char: str, size: int):
     return img
 
 # =====================================================
-# Medição de texto
+# Texto / fonte
 # =====================================================
 
-def measure_text_width(draw, text, font, tracking):
-    w = 0
-    tpx = int(font.size * tracking)
+def measure_text(draw, text, font, tracking):
+    width = 0
+    tracking_px = int(font.size * tracking)
     for ch in text:
         if ch == " ":
-            w += draw.textbbox((0, 0), " ", font=font)[2]
+            width += draw.textbbox((0, 0), " ", font=font)[2]
         else:
             cw = draw.textbbox((0, 0), ch, font=font)[2]
-            w += cw + tpx
-    return w
+            width += cw + tracking_px
+    return width
 
 
 def fit_font(draw, text, font_path, max_width, tracking):
     size = 96
     while size >= 18:
         font = ImageFont.truetype(font_path, size)
-        if measure_text_width(draw, text, font, tracking) <= max_width:
+        if measure_text(draw, text, font, tracking) <= max_width:
             return font
         size -= 2
     return ImageFont.truetype(font_path, 18)
 
 # =====================================================
-# Renderização com FADE
+# Renderização com fade MARVEL-like
 # =====================================================
 
 def render_blocks(
@@ -111,12 +145,12 @@ def render_blocks(
     img = Image.new("RGBA", (width, height), bg + (255,))
     draw = ImageDraw.Draw(img)
 
-    text_height = draw.textbbox((0, 0), "X", font=font)[3]
+    text_h = draw.textbbox((0, 0), "X", font=font)[3]
     x = (width - final_width) // 2
-    y = (height - text_height) // 2
+    y = (height - text_h) // 2
 
     cursor = x
-    tpx = int(font.size * tracking)
+    tracking_px = int(font.size * tracking)
     emoji_size = font.size
 
     for i in range(visible_blocks):
@@ -124,25 +158,24 @@ def render_blocks(
             cursor += draw.textbbox((0, 0), " ", font=font)[2]
 
         fading = (i == visible_blocks - 1 and fade_alpha < 1.0)
+        alpha = int(255 * fade_alpha) if fading else 255
 
         for word in blocks_words[i]:
             for ch in word:
-                alpha = int(255 * fade_alpha) if fading else 255
-
                 if is_emoji(ch):
-                    emoji_img = load_emoji_image(ch, emoji_size)
-                    if emoji_img:
-                        e = emoji_img.copy()
+                    e = load_emoji_image(ch, emoji_size)
+                    if e:
+                        e = e.copy()
                         e.putalpha(alpha)
                         img.paste(e, (cursor, y), e)
-                        cursor += emoji_size + tpx
+                        cursor += emoji_size + tracking_px
                 else:
                     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
                     od = ImageDraw.Draw(overlay)
                     od.text((cursor, y), ch, font=font, fill=color + (alpha,))
                     img = Image.alpha_composite(img, overlay)
                     cw = draw.textbbox((0, 0), ch, font=font)[2]
-                    cursor += cw + tpx
+                    cursor += cw + tracking_px
 
             cursor += draw.textbbox((0, 0), " ", font=font)[2]
 
@@ -153,26 +186,34 @@ def render_blocks(
 # =====================================================
 
 st.title("🎬 Will Return Generator")
-
-st.markdown(
-    "Gere animações no estilo **Marvel – Will Return**, com revelação progressiva e fade cinematográfico."
-)
+st.markdown("Animações no estilo **Marvel – Will Return**, calibradas frame a frame.")
 
 text_a = st.text_input("Bloco 1", "Steve Rogers")
 text_b = st.text_input("Bloco 2", "Will Return")
 text_c = st.text_input("Bloco 3", "In Avengers: Doomsday")
 
-font_name = st.selectbox("Fonte", list(FONT_OPTIONS.keys()), index=0)
-font_cfg = FONT_OPTIONS[font_name]
-
 format_out = st.selectbox("Formato", ["GIF", "WebP", "PNG", "JPG"])
 
+if format_out in ["GIF", "WebP"]:
+    preset = st.selectbox("Preset", list(PRESETS.keys()), index=0)
+    if st.button("Aplicar preset"):
+        p = PRESETS[preset]
+        st.session_state.fps = p["fps"]
+        st.session_state.fade_ms = p["fade_ms"]
+        st.session_state.delay_ms = p["delay_ms"]
+
 with st.expander("⚙️ Opções Avançadas"):
-    fps = st.slider("FPS", 6, 15, 10)
-    delay_ms = st.slider("Delay (ms)", 200, 1200, 800)
+    font_name = st.selectbox("Fonte", list(FONT_OPTIONS.keys()), index=0)
+    fps = st.slider("FPS", 6, 24, st.session_state.fps)
+    fade_ms = st.slider("Velocidade do fade (ms)", 400, 1500, st.session_state.fade_ms)
+    delay_ms = st.slider("Delay entre blocos (ms)", 1000, 5000, st.session_state.delay_ms)
     resolution = st.selectbox("Resolução", ["640x360", "1280x720"])
     bg_hex = st.color_picker("Fundo", "#000000")
     text_hex = st.color_picker("Texto", "#FFFFFF")
+
+    st.session_state.fps = fps
+    st.session_state.fade_ms = fade_ms
+    st.session_state.delay_ms = delay_ms
 
 gerar = st.button("🎞️ Gerar", use_container_width=True)
 preview = st.empty()
@@ -190,12 +231,13 @@ if gerar:
     bg = tuple(int(bg_hex[i:i+2], 16) for i in (1, 3, 5))
     color = tuple(int(text_hex[i:i+2], 16) for i in (1, 3, 5))
 
+    font_cfg = FONT_OPTIONS[font_name]
     dummy = Image.new("RGB", (w, h))
-    ddraw = ImageDraw.Draw(dummy)
+    d = ImageDraw.Draw(dummy)
 
     final_text = " ".join(blocks)
-    font = fit_font(ddraw, final_text, font_cfg["path"], int(w * 0.9), font_cfg["tracking"])
-    final_width = measure_text_width(ddraw, final_text, font, font_cfg["tracking"])
+    font = fit_font(d, final_text, font_cfg["path"], int(w * 0.75), font_cfg["tracking"])
+    final_width = measure_text(d, final_text, font, font_cfg["tracking"])
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f".{format_out.lower()}")
 
@@ -205,28 +247,49 @@ if gerar:
         img.convert("RGB").save(tmp.name, format="JPEG" if format_out == "JPG" else format_out)
     else:
         frames = []
-        fade_frames = max(4, int(0.25 * fps))
-        hold = max(1, int((delay_ms / 1000) * fps))
+        fade_frames = max(2, int((st.session_state.fade_ms / 1000) * st.session_state.fps))
+        hold = max(1, int((st.session_state.delay_ms / 1000) * st.session_state.fps))
 
         for i in range(1, len(blocks_words) + 1):
             for f in range(fade_frames):
-                alpha = (f + 1) / fade_frames
+                t = (f + 1) / fade_frames
+                fade_alpha = (1 - math.exp(-5.5 * t)) ** 1.2
+
                 frames.append(
-                    render_blocks(blocks_words, i, font,
-                                  font_cfg["tracking"], w, h,
-                                  bg, color, final_width, alpha)
+                    render_blocks(
+                        blocks_words,
+                        i,
+                        font,
+                        font_cfg["tracking"],
+                        w,
+                        h,
+                        bg,
+                        color,
+                        final_width,
+                        fade_alpha
+                    )
                 )
+
             frames += [
-                render_blocks(blocks_words, i, font,
-                              font_cfg["tracking"], w, h,
-                              bg, color, final_width, 1.0)
+                render_blocks(
+                    blocks_words,
+                    i,
+                    font,
+                    font_cfg["tracking"],
+                    w,
+                    h,
+                    bg,
+                    color,
+                    final_width,
+                    1.0
+                )
             ] * max(1, hold - fade_frames)
 
         frames[0].save(
             tmp.name,
             save_all=True,
             append_images=frames[1:],
-            duration=int(1000 / fps),
+            duration=int(1000 / st.session_state.fps),
             loop=0,
             format="WEBP" if format_out == "WebP" else "GIF"
         )
