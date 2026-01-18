@@ -27,15 +27,22 @@ st.markdown(
 )
 
 # =====================================================
-# Estado inicial (preset padrão aplicado)
+# Estado inicial (Marvel default)
 # =====================================================
 
-if "fps" not in st.session_state:
-    st.session_state.fps = 12
-if "fade_ms" not in st.session_state:
-    st.session_state.fade_ms = 1100
-if "delay_ms" not in st.session_state:
-    st.session_state.delay_ms = 2800
+defaults = {
+    "fps": 12,
+    "fade_ms": 1100,
+    "delay_ms": 2800,
+    "resolution": "1280x720",
+    "font_name": "Oswald Regular 400 (default)",
+    "bg_hex": "#000000",
+    "text_hex": "#FFFFFF",
+}
+
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 # =====================================================
 # Fontes
@@ -60,17 +67,25 @@ PRESETS = {
     "Marvel Original (Closest Match)": {
         "fps": 12,
         "fade_ms": 1100,
-        "delay_ms": 2800
+        "delay_ms": 2800,
+        "resolution": "1280x720",
+        "font": "Oswald Regular 400 (default)",
+        "bg": "#000000",
+        "text": "#FFFFFF",
+    },
+    "Alta Qualidade": {
+        "fps": 15,
+        "fade_ms": 1300,
+        "delay_ms": 3200,
+        "resolution": "1280x720",
+        "font": None,
     },
     "Leve (WhatsApp)": {
         "fps": 8,
         "fade_ms": 700,
-        "delay_ms": 1500
-    },
-    "Alta qualidade": {
-        "fps": 15,
-        "fade_ms": 1300,
-        "delay_ms": 3200
+        "delay_ms": 1500,
+        "resolution": "640x360",
+        "font": None,
     },
 }
 
@@ -127,7 +142,7 @@ def fit_font(draw, text, font_path, max_width, tracking):
     return ImageFont.truetype(font_path, 18)
 
 # =====================================================
-# Renderização com fade MARVEL-like
+# Renderização
 # =====================================================
 
 def render_blocks(
@@ -157,8 +172,7 @@ def render_blocks(
         if i > 0:
             cursor += draw.textbbox((0, 0), " ", font=font)[2]
 
-        fading = (i == visible_blocks - 1 and fade_alpha < 1.0)
-        alpha = int(255 * fade_alpha) if fading else 255
+        alpha = int(255 * fade_alpha) if i == visible_blocks - 1 else 255
 
         for word in blocks_words[i]:
             for ch in word:
@@ -186,7 +200,16 @@ def render_blocks(
 # =====================================================
 
 st.title("🎬 Will Return Generator")
-st.markdown("Animações no estilo **Marvel – Will Return**, calibradas frame a frame.")
+
+st.markdown(
+    """
+    <p style="font-size:1.05em; opacity:0.85">
+    Gere animações no estilo <b>“Will Return”</b> da Marvel, com revelação progressiva do texto.
+    Exporte como <b>GIF/WebP animado</b> ou <b>PNG/JPG estático</b>.
+    </p>
+    """,
+    unsafe_allow_html=True
+)
 
 text_a = st.text_input("Bloco 1", "Steve Rogers")
 text_b = st.text_input("Bloco 2", "Will Return")
@@ -196,28 +219,60 @@ format_out = st.selectbox("Formato", ["GIF", "WebP", "PNG", "JPG"])
 
 if format_out in ["GIF", "WebP"]:
     preset = st.selectbox("Preset", list(PRESETS.keys()), index=0)
-    if st.button("Aplicar preset"):
-        p = PRESETS[preset]
-        st.session_state.fps = p["fps"]
-        st.session_state.fade_ms = p["fade_ms"]
-        st.session_state.delay_ms = p["delay_ms"]
+
+    p = PRESETS[preset]
+    st.session_state.fps = p["fps"]
+    st.session_state.fade_ms = p["fade_ms"]
+    st.session_state.delay_ms = p["delay_ms"]
+
+    if p.get("resolution"):
+        st.session_state.resolution = p["resolution"]
+    if p.get("font"):
+        st.session_state.font_name = p["font"]
+    if p.get("bg"):
+        st.session_state.bg_hex = p["bg"]
+    if p.get("text"):
+        st.session_state.text_hex = p["text"]
 
 with st.expander("⚙️ Opções Avançadas"):
-    font_name = st.selectbox("Fonte", list(FONT_OPTIONS.keys()), index=0)
+    font_name = st.selectbox(
+        "Fonte",
+        list(FONT_OPTIONS.keys()),
+        index=list(FONT_OPTIONS.keys()).index(st.session_state.font_name)
+    )
+
     fps = st.slider("FPS", 6, 24, st.session_state.fps)
     fade_ms = st.slider("Velocidade do fade (ms)", 400, 1500, st.session_state.fade_ms)
     delay_ms = st.slider("Delay entre blocos (ms)", 1000, 5000, st.session_state.delay_ms)
-    resolution = st.selectbox("Resolução", ["640x360", "1280x720"])
-    bg_hex = st.color_picker("Fundo", "#000000")
-    text_hex = st.color_picker("Texto", "#FFFFFF")
+    resolution = st.selectbox(
+        "Resolução",
+        ["640x360", "1280x720"],
+        index=["640x360", "1280x720"].index(st.session_state.resolution)
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        bg_hex = st.color_picker("Fundo", st.session_state.bg_hex)
+    with col2:
+        text_hex = st.color_picker("Texto", st.session_state.text_hex)
 
     st.session_state.fps = fps
     st.session_state.fade_ms = fade_ms
     st.session_state.delay_ms = delay_ms
+    st.session_state.resolution = resolution
+    st.session_state.font_name = font_name
+    st.session_state.bg_hex = bg_hex
+    st.session_state.text_hex = text_hex
 
 gerar = st.button("🎞️ Gerar", use_container_width=True)
 preview = st.empty()
 download = st.empty()
+st.markdown(
+    "<div style='text-align:center;opacity:0.6;font-size:0.9em'>"
+    "Desenvolvido por Marcelo Diniz"
+    "</div>",
+    unsafe_allow_html=True
+)
 
 # =====================================================
 # Geração
@@ -227,11 +282,11 @@ if gerar:
     blocks = [b.strip() for b in [text_a, text_b, text_c] if b.strip()]
     blocks_words = [b.split() for b in blocks]
 
-    w, h = map(int, resolution.split("x"))
-    bg = tuple(int(bg_hex[i:i+2], 16) for i in (1, 3, 5))
-    color = tuple(int(text_hex[i:i+2], 16) for i in (1, 3, 5))
+    w, h = map(int, st.session_state.resolution.split("x"))
+    bg = tuple(int(st.session_state.bg_hex[i:i+2], 16) for i in (1, 3, 5))
+    color = tuple(int(st.session_state.text_hex[i:i+2], 16) for i in (1, 3, 5))
 
-    font_cfg = FONT_OPTIONS[font_name]
+    font_cfg = FONT_OPTIONS[st.session_state.font_name]
     dummy = Image.new("RGB", (w, h))
     d = ImageDraw.Draw(dummy)
 
