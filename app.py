@@ -9,10 +9,7 @@ import emoji
 # Configuração da página
 # =====================================================
 
-st.set_page_config(
-    page_title="Will Return Generator",
-    layout="centered"
-)
+st.set_page_config(page_title="Will Return Generator", layout="centered")
 
 st.markdown(
     """
@@ -29,44 +26,18 @@ st.markdown(
 )
 
 # =====================================================
-# Fontes disponíveis (whitelist)
+# Fontes disponíveis
 # =====================================================
 
 FONT_OPTIONS = {
-    "Oswald Regular 400 (default)": {
-        "path": "fonts/Oswald-Regular.ttf",
-        "tracking": 0.15
-    },
-
-    "Roboto Condensed Thin 100": {
-        "path": "fonts/RobotoCondensed-Thin.ttf",
-        "tracking": 0.10
-    },
-    "Roboto Condensed Light 300": {
-        "path": "fonts/RobotoCondensed-Light.ttf",
-        "tracking": 0.12
-    },
-    "Roboto Condensed Regular Italic 400": {
-        "path": "fonts/RobotoCondensed-Italic.ttf",
-        "tracking": 0.12
-    },
-    "Roboto Condensed Black 900": {
-        "path": "fonts/RobotoCondensed-Black.ttf",
-        "tracking": 0.08
-    },
-
-    "Inter Tight Regular 400": {
-        "path": "fonts/InterTight-Regular.ttf",
-        "tracking": 0.05
-    },
-    "Inter Tight Medium 500": {
-        "path": "fonts/InterTight-Medium.ttf",
-        "tracking": 0.05
-    },
-    "Inter Tight Bold 700": {
-        "path": "fonts/InterTight-Bold.ttf",
-        "tracking": 0.04
-    },
+    "Oswald Regular 400 (default)": {"path": "fonts/Oswald-Regular.ttf", "tracking": 0.15},
+    "Roboto Condensed Thin 100": {"path": "fonts/RobotoCondensed-Thin.ttf", "tracking": 0.10},
+    "Roboto Condensed Light 300": {"path": "fonts/RobotoCondensed-Light.ttf", "tracking": 0.12},
+    "Roboto Condensed Regular Italic 400": {"path": "fonts/RobotoCondensed-Italic.ttf", "tracking": 0.12},
+    "Roboto Condensed Black 900": {"path": "fonts/RobotoCondensed-Black.ttf", "tracking": 0.08},
+    "Inter Tight Regular 400": {"path": "fonts/InterTight-Regular.ttf", "tracking": 0.05},
+    "Inter Tight Medium 500": {"path": "fonts/InterTight-Medium.ttf", "tracking": 0.05},
+    "Inter Tight Bold 700": {"path": "fonts/InterTight-Bold.ttf", "tracking": 0.04},
 }
 
 # =====================================================
@@ -87,127 +58,95 @@ def load_emoji_image(char: str, size: int):
     codepoint = "-".join(f"{ord(c):x}" for c in char)
     url = f"https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/72x72/{codepoint}.png"
 
-    try:
-        r = requests.get(url, timeout=5)
-        if r.status_code != 200:
-            return None
-        img = Image.open(BytesIO(r.content)).convert("RGBA")
-        img = img.resize((size, size), Image.LANCZOS)
-        EMOJI_CACHE[key] = img
-        return img
-    except Exception:
+    r = requests.get(url, timeout=5)
+    if r.status_code != 200:
         return None
 
+    img = Image.open(BytesIO(r.content)).convert("RGBA")
+    img = img.resize((size, size), Image.LANCZOS)
+    EMOJI_CACHE[key] = img
+    return img
+
 # =====================================================
-# Texto / Layout helpers
+# Medição de texto
 # =====================================================
 
-def measure_text_width_with_tracking(draw, text, font, tracking_factor):
-    width = 0
-    tracking_px = int(font.size * tracking_factor)
-
+def measure_text_width(draw, text, font, tracking):
+    w = 0
+    tpx = int(font.size * tracking)
     for ch in text:
         if ch == " ":
-            width += draw.textbbox((0, 0), " ", font=font)[2]
+            w += draw.textbbox((0, 0), " ", font=font)[2]
         else:
-            char_w = draw.textbbox((0, 0), ch, font=font)[2]
-            width += char_w + tracking_px
+            cw = draw.textbbox((0, 0), ch, font=font)[2]
+            w += cw + tpx
+    return w
 
-    return width
 
-
-def fit_font_single_line(draw, text, font_path, max_width, tracking_factor):
+def fit_font(draw, text, font_path, max_width, tracking):
     size = 96
     while size >= 18:
         font = ImageFont.truetype(font_path, size)
-        measured_width = measure_text_width_with_tracking(
-            draw, text, font, tracking_factor
-        )
-        if measured_width <= max_width:
+        if measure_text_width(draw, text, font, tracking) <= max_width:
             return font
         size -= 2
-
     return ImageFont.truetype(font_path, 18)
 
-def classify_words(words):
-    """
-    A = antes de WILL RETURN IN
-    B = WILL RETURN IN
-    C = depois
-    """
-    classes = []
-    state = "A"
+# =====================================================
+# Renderização com FADE
+# =====================================================
 
-    for w in words:
-        if w == "WILL":
-            state = "B"
-        elif state == "B" and w == "IN":
-            classes.append("B")
-            state = "C"
-            continue
-
-        classes.append(state)
-
-    return classes
-
-
-def render_text(words, classes, visible, font, tracking_factor, width, height, bg, color):
-    img = Image.new("RGB", (width, height), bg)
+def render_blocks(
+    blocks_words,
+    visible_blocks,
+    font,
+    tracking,
+    width,
+    height,
+    bg,
+    color,
+    final_width,
+    fade_alpha=1.0
+):
+    img = Image.new("RGBA", (width, height), bg + (255,))
     draw = ImageDraw.Draw(img)
 
-    full_text = " ".join(words)
-
-    # --- MEDIÇÃO CORRETA COM TRACKING ---
-    text_width = measure_text_width_with_tracking(
-        draw, full_text, font, tracking_factor
-    )
-
-    text_height = draw.textbbox((0, 0), full_text, font=font)[3]
-
-    # --- CENTRALIZAÇÃO REAL ---
-    x = (width - text_width) // 2
+    text_height = draw.textbbox((0, 0), "X", font=font)[3]
+    x = (width - final_width) // 2
     y = (height - text_height) // 2
 
     cursor = x
+    tpx = int(font.size * tracking)
     emoji_size = font.size
-    tracking_px = int(font.size * tracking_factor)
 
-    for word, cls in zip(words, classes):
-        if cls not in visible:
-            # Avança cursor corretamente mesmo sem desenhar
+    for i in range(visible_blocks):
+        if i > 0:
+            cursor += draw.textbbox((0, 0), " ", font=font)[2]
+
+        fading = (i == visible_blocks - 1 and fade_alpha < 1.0)
+
+        for word in blocks_words[i]:
             for ch in word:
-                if ch == " ":
-                    cursor += draw.textbbox((0, 0), " ", font=font)[2]
+                alpha = int(255 * fade_alpha) if fading else 255
+
+                if is_emoji(ch):
+                    emoji_img = load_emoji_image(ch, emoji_size)
+                    if emoji_img:
+                        e = emoji_img.copy()
+                        e.putalpha(alpha)
+                        img.paste(e, (cursor, y), e)
+                        cursor += emoji_size + tpx
                 else:
-                    char_w = draw.textbbox((0, 0), ch, font=font)[2]
-                    cursor += char_w + tracking_px
+                    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+                    od = ImageDraw.Draw(overlay)
+                    od.text((cursor, y), ch, font=font, fill=color + (alpha,))
+                    img = Image.alpha_composite(img, overlay)
+                    cw = draw.textbbox((0, 0), ch, font=font)[2]
+                    cursor += cw + tpx
 
             cursor += draw.textbbox((0, 0), " ", font=font)[2]
-            continue
-
-        for ch in word:
-            if is_emoji(ch):
-                emoji_img = load_emoji_image(ch, emoji_size)
-                if emoji_img:
-                    img.paste(emoji_img, (cursor, y), emoji_img)
-                    cursor += emoji_size + tracking_px
-                else:
-                    cursor += emoji_size + tracking_px
-            else:
-                draw.text((cursor, y), ch, font=font, fill=color)
-                char_w = draw.textbbox((0, 0), ch, font=font)[2]
-                cursor += char_w + tracking_px
-
-        # Espaço entre palavras (sem tracking extra)
-        cursor += draw.textbbox((0, 0), " ", font=font)[2]
 
     return img
-
-
-
-def render_static_image(words, font, tracking_factor, width, height, bg, color):
-    classes = ["A"] * len(words)
-    return render_text(words, classes, {"A"}, font, tracking_factor, width, height, bg, color)
 
 # =====================================================
 # UI
@@ -216,109 +155,72 @@ def render_static_image(words, font, tracking_factor, width, height, bg, color):
 st.title("🎬 Will Return Generator")
 
 st.markdown(
-    """
-    <p style="font-size:1.05em; opacity:0.85">
-    Gere animações no estilo <b>“Will Return”</b> da Marvel, com revelação progressiva do texto.
-    Exporte como <b>GIF/WebP animado</b> ou <b>PNG/JPG estático</b>.
-    </p>
-    """,
-    unsafe_allow_html=True
+    "Gere animações no estilo **Marvel – Will Return**, com revelação progressiva e fade cinematográfico."
 )
 
-full_text = st.text_input(
-    "Texto",
-    "MARCELO WILL RETURN IN AVENGERS: DOOMSDAY"
-)
+text_a = st.text_input("Bloco 1", "Steve Rogers")
+text_b = st.text_input("Bloco 2", "Will Return")
+text_c = st.text_input("Bloco 3", "In Avengers: Doomsday")
 
-font_name = st.selectbox(
-    "Fonte",
-    list(FONT_OPTIONS.keys()),
-    index=0
-)
+font_name = st.selectbox("Fonte", list(FONT_OPTIONS.keys()), index=0)
+font_cfg = FONT_OPTIONS[font_name]
 
-font_config = FONT_OPTIONS[font_name]
-font_path = font_config["path"]
-tracking_factor = font_config["tracking"]
+format_out = st.selectbox("Formato", ["GIF", "WebP", "PNG", "JPG"])
 
-format_out = st.selectbox(
-    "Formato de saída",
-    ["GIF", "WebP", "PNG", "JPG"]
-)
-
-with st.expander("⚙️ Opções Avançadas", expanded=False):
+with st.expander("⚙️ Opções Avançadas"):
     fps = st.slider("FPS", 6, 15, 10)
-    delay_ms = st.slider("Delay entre blocos (ms)", 100, 1000, 1000)
+    delay_ms = st.slider("Delay (ms)", 200, 1200, 800)
     resolution = st.selectbox("Resolução", ["640x360", "1280x720"])
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        bg_hex = st.color_picker("Cor de fundo", "#000000")
-    with col_b:
-        text_hex = st.color_picker("Cor do texto", "#FFFFFF")
+    bg_hex = st.color_picker("Fundo", "#000000")
+    text_hex = st.color_picker("Texto", "#FFFFFF")
 
 gerar = st.button("🎞️ Gerar", use_container_width=True)
-
-preview_slot = st.empty()
-download_slot = st.empty()
-
-st.markdown(
-    "<div style='text-align:center;opacity:0.6;font-size:0.9em;margin-top:2rem'>"
-    "Desenvolvido por Marcelo Diniz"
-    "</div>",
-    unsafe_allow_html=True
-)
+preview = st.empty()
+download = st.empty()
 
 # =====================================================
 # Geração
 # =====================================================
 
 if gerar:
-    if "WILL RETURN IN" not in full_text:
-        st.error("O texto deve conter exatamente 'WILL RETURN IN'")
-        st.stop()
+    blocks = [b.strip() for b in [text_a, text_b, text_c] if b.strip()]
+    blocks_words = [b.split() for b in blocks]
 
-    words = full_text.split()
-    classes = classify_words(words)
-
-    width, height = map(int, resolution.split("x"))
+    w, h = map(int, resolution.split("x"))
     bg = tuple(int(bg_hex[i:i+2], 16) for i in (1, 3, 5))
     color = tuple(int(text_hex[i:i+2], 16) for i in (1, 3, 5))
 
-    dummy = Image.new("RGB", (width, height))
-    draw = ImageDraw.Draw(dummy)
+    dummy = Image.new("RGB", (w, h))
+    ddraw = ImageDraw.Draw(dummy)
 
-    font = fit_font_single_line(
-    draw,
-    full_text,
-    font_path,
-    int(width * 0.9),
-    tracking_factor
-)
-    tmp = tempfile.NamedTemporaryFile(
-        delete=False,
-        suffix=f".{format_out.lower()}"
-    )
+    final_text = " ".join(blocks)
+    font = fit_font(ddraw, final_text, font_cfg["path"], int(w * 0.9), font_cfg["tracking"])
+    final_width = measure_text_width(ddraw, final_text, font, font_cfg["tracking"])
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=f".{format_out.lower()}")
 
     if format_out in ["PNG", "JPG"]:
-        img = render_static_image(
-            words, font, tracking_factor, width, height, bg, color
-        )
-        img.save(tmp.name, format="JPEG" if format_out == "JPG" else format_out)
+        img = render_blocks(blocks_words, len(blocks_words), font,
+                            font_cfg["tracking"], w, h, bg, color, final_width)
+        img.convert("RGB").save(tmp.name, format="JPEG" if format_out == "JPG" else format_out)
     else:
-        hold = max(1, int((delay_ms / 1000) * fps))
         frames = []
+        fade_frames = max(4, int(0.25 * fps))
+        hold = max(1, int((delay_ms / 1000) * fps))
 
-        frames += [
-            render_text(words, classes, {"A"}, font, tracking_factor, width, height, bg, color)
-        ] * hold
-
-        frames += [
-            render_text(words, classes, {"A", "B"}, font, tracking_factor, width, height, bg, color)
-        ] * hold
-
-        frames += [
-            render_text(words, classes, {"A", "B", "C"}, font, tracking_factor, width, height, bg, color)
-        ] * (hold * 2)
+        for i in range(1, len(blocks_words) + 1):
+            for f in range(fade_frames):
+                alpha = (f + 1) / fade_frames
+                frames.append(
+                    render_blocks(blocks_words, i, font,
+                                  font_cfg["tracking"], w, h,
+                                  bg, color, final_width, alpha)
+                )
+            frames += [
+                render_blocks(blocks_words, i, font,
+                              font_cfg["tracking"], w, h,
+                              bg, color, final_width, 1.0)
+            ] * max(1, hold - fade_frames)
 
         frames[0].save(
             tmp.name,
@@ -329,14 +231,10 @@ if gerar:
             format="WEBP" if format_out == "WebP" else "GIF"
         )
 
-    preview_slot.image(
-        tmp.name,
-        caption="Preview",
-        use_container_width=True
-    )
+    preview.image(tmp.name, caption="Preview", use_container_width=True)
 
     with open(tmp.name, "rb") as f:
-        download_slot.download_button(
+        download.download_button(
             "⬇️ Download",
             f,
             file_name=f"will_return.{format_out.lower()}",
