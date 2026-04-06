@@ -597,7 +597,43 @@ if st.button("🎞️ Gerar", use_container_width=True):
 
     with open(tmp.name, "rb") as f:
         st.download_button("⬇️ Download", f, file_name=f"will_return.{format_out.lower()}",
-                           mime=f"image/{format_out.lower()}")
+                           mime=f"image/{format_out.lower()}", use_container_width=True)
 
-    st.markdown("<div style='text-align:center;opacity:0.6;font-size:0.9em;margin-top:1rem'>"
-                "Desenvolvido por Marcelo Diniz</div>", unsafe_allow_html=True)
+st.divider()
+
+# --- Doação / Apoio ---
+st.markdown("<h2 style='text-align: center;'>☕ Apoie o Projeto</h2>", unsafe_allow_html=True)
+st.markdown(
+    "<p style='text-align: center;'>Se este aplicativo foi útil para você, considere fazer uma doação e me pagar um café! <br>"
+    "Isso ajuda a manter o projeto vivo e com novas atualizações. ❤️</p>",
+    unsafe_allow_html=True
+)
+
+st.markdown("<p style='text-align: center; margin-bottom: 0.5rem;'><b>Chave Pix (QR Code):</b></p>", unsafe_allow_html=True)
+
+col_qr1, col_qr2, col_qr3 = st.columns([1, 1, 1])
+with col_qr2:
+    st.image("qrcode_pix.png", caption="Escaneie o QR Code", use_container_width=True)
+
+st.markdown("<p style='text-align: center; margin-top: 1rem; margin-bottom: 0.5rem;'><b>Chave Pix (Copia e Cola):</b></p>", unsafe_allow_html=True)
+
+col_code1, col_code2, col_code3 = st.columns([1, 4, 1])
+with col_code2:
+    st.code(
+        "00020126580014br.gov.bcb.pix013649fc6ace-ef04-4e46-bd26-b935d692c9675204000053039865802BR5922MARCELO FERREIRA DINIZ60085500016162070503***63040B92",
+        language="text",
+        wrap_lines=True
+    )
+
+st.markdown("<p style='text-align: center; margin-top: 1.5rem; margin-bottom: 0.5rem;'><b>International Support:</b></p>", unsafe_allow_html=True)
+
+st.markdown(
+    "<div style='text-align: center;'>"
+    "<a href='https://www.buymeacoffee.com/marcelofdiniz' target='_blank'>"
+    "<img src='https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png' alt='Buy Me A Coffee' width='200'>"
+    "</a></div>",
+    unsafe_allow_html=True
+)
+
+st.markdown("<div style='text-align:center;opacity:0.6;font-size:0.9em;margin-top:1rem'>"
+            "Desenvolvido por <a href='mailto:marcelofdiniz@gmail.com' style='color:#e62429; text-decoration:underline; font-weight:bold;'>Marcelo Diniz</a></div>", unsafe_allow_html=True)
